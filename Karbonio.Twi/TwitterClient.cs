@@ -19,9 +19,9 @@ public record Media(MediaType Type, string? Url, VideoVariant[]? Variants);
 
 public class TwitterClient(HttpClient httpClient)
 {
-    private static readonly string BearerToken = Uri.UnescapeDataString("AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA");
-    private const string GraphQLEndpoint = "https://x.com/i/api/graphql/2ICDjqPd81tulZcYrtpTuQ/TweetResultByRestId";
-    private const string GuestTokenEndpoint = "https://api.x.com/1.1/guest/activate.json";
+    static readonly string BearerToken = Uri.UnescapeDataString("AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA");
+    const string GraphQLEndpoint = "https://x.com/i/api/graphql/2ICDjqPd81tulZcYrtpTuQ/TweetResultByRestId";
+    const string GuestTokenEndpoint = "https://api.x.com/1.1/guest/activate.json";
 
     public async Task<Tweet> GetTweetByIdAsync(string tweetId)
     {
@@ -33,33 +33,27 @@ public class TwitterClient(HttpClient httpClient)
     async Task<string> CallGraphQLApiAsync(string endpoint, string tweetId, Dictionary<string, string> query)
     {
         var guestToken = await FetchGuestTokenAsync();
-        
+
         var queryString = string.Join("&", query.Select(kvp => $"{kvp.Key}={Uri.EscapeDataString(kvp.Value)}"));
         var url = $"{endpoint}?{queryString}";
-        
+
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", BearerToken);
         request.Headers.Add("x-guest-token", guestToken);
-        request.Headers.Add("x-twitter-client-language", "en");
-        request.Headers.Add("x-twitter-active-user", "yes");
-        request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-        request.Headers.Add("Accept", "application/json, text/plain, */*");
-        request.Headers.Add("Accept-Language", "en-US,en;q=0.9");
-        request.Headers.Add("Referer", "https://x.com/");
-        request.Headers.Add("Origin", "https://x.com");
-        
+        AddConstantHeaders(request);
+
         var response = await httpClient.SendAsync(request);
-        
+
         if (!response.IsSuccessStatusCode)
         {
             var errorContent = await response.Content.ReadAsStringAsync();
             var errorMsg = errorContent.Length > 500 ? errorContent.Substring(0, 500) + "..." : errorContent;
             throw new HttpRequestException($"HTTP {response.StatusCode}: {errorMsg}");
         }
-        
+
         var json = await response.Content.ReadAsStringAsync();
         var doc = JsonDocument.Parse(json);
-        
+
         if (doc.RootElement.TryGetProperty("errors", out var errors))
         {
             var errorMessages = errors.EnumerateArray()
@@ -67,7 +61,7 @@ public class TwitterClient(HttpClient httpClient)
                 .Where(m => m != null)
                 .Distinct()
                 .ToList();
-            
+
             var errorText = string.Join(", ", errorMessages);
             if (errorText.Contains("not authorized", StringComparison.OrdinalIgnoreCase))
             {
@@ -75,18 +69,30 @@ public class TwitterClient(HttpClient httpClient)
             }
             throw new InvalidOperationException($"Twitter API error: {errorText}");
         }
-        
+
         return json;
+    }
+
+    static void AddConstantHeaders(HttpRequestMessage request)
+    {
+        request.Headers.Add("x-twitter-client-language", "en");
+        request.Headers.Add("x-twitter-active-user", "yes");
+        request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        request.Headers.Add("Accept", "application/json, text/plain, */*");
+        request.Headers.Add("Accept-Language", "en-US,en;q=0.9");
+        request.Headers.Add("Referer", "https://x.com/");
+        request.Headers.Add("Origin", "https://x.com");
     }
 
     async Task<string> FetchGuestTokenAsync()
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, GuestTokenEndpoint);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", BearerToken);
-        request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-        request.Headers.Add("Accept", "application/json");
+        AddConstantHeaders(request);
+        request.Headers.Remove("Accept"); // Remove the default Accept header
+        request.Headers.Add("Accept", "application/json");  // Add guest token specific Accept header
         request.Content = new StringContent("");
-        
+
         var response = await httpClient.SendAsync(request);
         
         if (!response.IsSuccessStatusCode)
