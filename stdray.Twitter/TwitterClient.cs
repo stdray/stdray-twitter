@@ -2,7 +2,7 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-namespace Karbonio.Twitter;
+namespace stdray.Twitter;
 
 public enum MediaType
 {
@@ -23,16 +23,16 @@ public class TwitterClient(HttpClient httpClient)
     const string GraphQLEndpoint = "https://x.com/i/api/graphql/2ICDjqPd81tulZcYrtpTuQ/TweetResultByRestId";
     const string GuestTokenEndpoint = "https://api.x.com/1.1/guest/activate.json";
 
-    public async Task<Tweet> GetTweetByIdAsync(string tweetId)
+    public async Task<Tweet> GetTweetById(string tweetId)
     {
         var query = BuildGraphQLQuery(tweetId);
-        var json = await CallGraphQLApiAsync(GraphQLEndpoint, tweetId, query);
+        var json = await CallGraphQL(GraphQLEndpoint, tweetId, query);
         return ParseTweet(json, tweetId);
     }
 
-    async Task<string> CallGraphQLApiAsync(string endpoint, string tweetId, Dictionary<string, string> query)
+    async Task<string> CallGraphQL(string endpoint, string tweetId, Dictionary<string, string> query)
     {
-        var guestToken = await FetchGuestTokenAsync();
+        var guestToken = await FetchGuestToken();
 
         var queryString = string.Join("&", query.Select(kvp => $"{kvp.Key}={Uri.EscapeDataString(kvp.Value)}"));
         var url = $"{endpoint}?{queryString}";
@@ -84,7 +84,7 @@ public class TwitterClient(HttpClient httpClient)
         request.Headers.Add("Origin", "https://x.com");
     }
 
-    async Task<string> FetchGuestTokenAsync()
+    async Task<string> FetchGuestToken()
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, GuestTokenEndpoint);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", BearerToken);

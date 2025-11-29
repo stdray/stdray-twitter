@@ -1,0 +1,59 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  DOTNET_VERSION: '8.0.x'
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Required for GitVersion to work properly
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Install Cake
+      run: |
+        dotnet tool install -g Cake.Tool
+        echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
+
+    - name: Install GitVersion
+      uses: gittools/actions/gitversion/setup@v3.0.0
+      with:
+        versionSpec: '5.x'
+
+    # Run the complete build process using Cake
+    - name: Run Cake Build
+      run: |
+        dotnet-cake --target="Default" --configuration="Release"
+      env:
+        NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+
+    # Only run publishing on main branch
+    - name: Publish to NuGet (on main branch)
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        dotnet-cake --target="Publish" --configuration="Release"
+      env:
+        NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+
+    # Upload artifacts
+    - name: Upload artifacts
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      uses: actions/upload-artifact@v4
+      with:
+        name: nuget-packages
+        path: ./artifacts/*.nupkg

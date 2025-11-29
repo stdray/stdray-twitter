@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Karbonio.Twitter\Karbonio.Twitter.csproj" />
+    <ProjectReference Include="..\stdray.Twitter\stdray.Twitter.csproj" />
   </ItemGroup>
 
 </Project>
