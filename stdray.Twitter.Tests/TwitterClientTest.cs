@@ -5,12 +5,12 @@ namespace stdray.Twitter.Tests;
 
 public class TwitterClientTest
 {
-    [Fact]
-    public async Task GetTweetByIdAsync_ShouldReturnCorrectMediaCount()
+    [Theory]
+    [InlineData("1989071142053900550")]
+    public async Task GetTweetByIdAsync_ShouldReturnCorrectMediaCountAndTextContent(string tweetId)
     {
         using var httpClient = new HttpClient();
         var client = new TwitterClient(httpClient);
-        var tweetId = "1989071142053900550";
 
         var tweet = await client.GetTweetById(tweetId);
 
@@ -19,6 +19,7 @@ public class TwitterClientTest
 
         Assert.Equal(3, imageCount);
         Assert.Equal(1, videoCount);
+        Assert.Contains("доФфига", tweet.Text, StringComparison.OrdinalIgnoreCase);
     }
 }
 

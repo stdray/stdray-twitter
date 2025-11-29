@@ -57,7 +57,7 @@ public class TwitterClient(HttpClient httpClient)
 {
     const string EncodedBearerToken = "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
     static readonly string BearerToken = Uri.UnescapeDataString(EncodedBearerToken);
-    const string GraphQLEndpoint = "https://x.com/i/api/graphql/2ICDjqPd81tulZcYrtpTuQ/TweetResultByRestId";
+    const string GraphQlEndpoint = "https://x.com/i/api/graphql/2ICDjqPd81tulZcYrtpTuQ/TweetResultByRestId";
     const string GuestTokenEndpoint = "https://api.x.com/1.1/guest/activate.json";
 
     /// <summary>
@@ -69,12 +69,12 @@ public class TwitterClient(HttpClient httpClient)
     /// <exception cref="InvalidOperationException">Thrown when the Twitter API returns an error or the tweet is unavailable.</exception>
     public async Task<Tweet> GetTweetById(string tweetId)
     {
-        var query = BuildGraphQLQuery(tweetId);
-        var json = await CallGraphQL(GraphQLEndpoint, tweetId, query);
+        var query = BuildGraphQlQuery(tweetId);
+        var json = await CallGraphQl(GraphQlEndpoint, tweetId, query);
         return ParseTweet(json, tweetId);
     }
 
-    async Task<string> CallGraphQL(string endpoint, string tweetId, Dictionary<string, string> query)
+    async Task<string> CallGraphQl(string endpoint, string tweetId, Dictionary<string, string> query)
     {
         var guestToken = await FetchGuestToken();
 
@@ -151,7 +151,7 @@ public class TwitterClient(HttpClient httpClient)
             ?? throw new InvalidOperationException("Failed to get guest token");
     }
 
-    static Dictionary<string, string> BuildGraphQLQuery(string tweetId)
+    static Dictionary<string, string> BuildGraphQlQuery(string tweetId)
     {
         var variables = JsonSerializer.Serialize(new
         {
@@ -259,7 +259,7 @@ public class TwitterClient(HttpClient httpClient)
                         url = photoUrl.GetString();
                     }
                 }
-                else if (mediaType == MediaType.Video || mediaType == MediaType.AnimatedGif)
+                else if (mediaType is MediaType.Video or MediaType.AnimatedGif)
                 {
                     if (item.TryGetProperty("video_info", out var videoInfo) &&
                         videoInfo.TryGetProperty("variants", out var variantsJson))
