@@ -14,8 +14,8 @@ public class TwitterClientTest
 
         var tweet = await client.GetTweetByIdAsync(tweetId);
 
-        var imageCount = tweet.Media.Count(m => m.Type == "photo");
-        var videoCount = tweet.Media.Count(m => m.Type == "video" || m.Type == "animated_gif");
+        var imageCount = tweet.Media.Count(m => m.Type == MediaType.Photo);
+        var videoCount = tweet.Media.Count(m => m.Type == MediaType.Video || m.Type == MediaType.AnimatedGif);
 
         Assert.Equal(3, imageCount);
         Assert.Equal(1, videoCount);

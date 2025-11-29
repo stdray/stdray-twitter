@@ -1,11 +1,21 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Karbonio.Twi;
 
+public enum MediaType
+{
+    Photo,
+    Video,
+    AnimatedGif
+}
+
+public record VideoVariant(string Url, int? Bitrate, int? Width, int? Height);
+
 public record Tweet(string Id, string Text, Media[] Media);
 
-public record Media(string Type, string Url);
+public record Media(MediaType Type, string? Url, VideoVariant[]? Variants);
 
 public class TwitterClient(HttpClient httpClient)
 {
@@ -22,21 +32,16 @@ public class TwitterClient(HttpClient httpClient)
 
     private async Task<string> CallGraphQLApiAsync(string endpoint, string tweetId, Dictionary<string, string> query)
     {
-        var headers = SetBaseHeaders();
         var guestToken = await FetchGuestTokenAsync();
-        headers["x-guest-token"] = guestToken;
-        headers["x-twitter-client-language"] = "en";
-        headers["x-twitter-active-user"] = "yes";
         
         var queryString = string.Join("&", query.Select(kvp => $"{kvp.Key}={Uri.EscapeDataString(kvp.Value)}"));
         var url = $"{endpoint}?{queryString}";
         
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", BearerToken);
-        foreach (var header in headers)
-        {
-            request.Headers.Add(header.Key, header.Value);
-        }
+        request.Headers.Add("x-guest-token", guestToken);
+        request.Headers.Add("x-twitter-client-language", "en");
+        request.Headers.Add("x-twitter-active-user", "yes");
         request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
         request.Headers.Add("Accept", "application/json, text/plain, */*");
         request.Headers.Add("Accept-Language", "en-US,en;q=0.9");
@@ -72,11 +77,6 @@ public class TwitterClient(HttpClient httpClient)
         }
         
         return json;
-    }
-
-    private static Dictionary<string, string> SetBaseHeaders()
-    {
-        return new Dictionary<string, string>();
     }
 
     private async Task<string> FetchGuestTokenAsync()
@@ -183,49 +183,96 @@ public class TwitterClient(HttpClient httpClient)
         {
             foreach (var item in mediaArray.EnumerateArray())
             {
-                var type = item.TryGetProperty("type", out var typeProp) ? typeProp.GetString() ?? "" : "";
-                string? url = null;
+                var typeStr = item.TryGetProperty("type", out var typeProp) ? typeProp.GetString() ?? "" : "";
+                MediaType mediaType = typeStr switch
+                {
+                    "photo" => MediaType.Photo,
+                    "video" => MediaType.Video,
+                    "animated_gif" => MediaType.AnimatedGif,
+                    _ => throw new InvalidOperationException($"Unknown media type: {typeStr}")
+                };
                 
-                if (type == "photo")
+                string? url = null;
+                VideoVariant[]? variants = null;
+                
+                if (mediaType == MediaType.Photo)
                 {
                     if (item.TryGetProperty("media_url_https", out var photoUrl))
                     {
                         url = photoUrl.GetString();
                     }
                 }
-                else if (type == "video" || type == "animated_gif")
+                else if (mediaType == MediaType.Video || mediaType == MediaType.AnimatedGif)
                 {
                     if (item.TryGetProperty("video_info", out var videoInfo) &&
-                        videoInfo.TryGetProperty("variants", out var variants))
+                        videoInfo.TryGetProperty("variants", out var variantsJson))
                     {
-                        var bestVariant = variants.EnumerateArray()
-                            .Where(v => v.TryGetProperty("url", out _))
-                            .OrderByDescending(v => 
+                        var variantList = new List<VideoVariant>();
+                        
+                        foreach (var variant in variantsJson.EnumerateArray())
+                        {
+                            if (!variant.TryGetProperty("url", out var variantUrl))
+                                continue;
+                            
+                            var variantUrlStr = variantUrl.GetString();
+                            if (variantUrlStr == null)
+                                continue;
+                            
+                            int? bitrate = null;
+                            if (variant.TryGetProperty("bitrate", out var br) && br.TryGetInt32(out var bitrateVal))
                             {
-                                if (v.TryGetProperty("bitrate", out var br))
-                                {
-                                    return br.TryGetInt32(out var bitrate) ? bitrate : 0;
-                                }
-                                return 0;
-                            })
+                                bitrate = bitrateVal;
+                            }
+                            
+                            int? width = null, height = null;
+                            if (variant.TryGetProperty("width", out var w) && w.TryGetInt32(out var widthVal))
+                            {
+                                width = widthVal;
+                            }
+                            if (variant.TryGetProperty("height", out var h) && h.TryGetInt32(out var heightVal))
+                            {
+                                height = heightVal;
+                            }
+                            
+                            if (width == null || height == null)
+                            {
+                                var dimensions = ExtractDimensionsFromUrl(variantUrlStr);
+                                width ??= dimensions.width;
+                                height ??= dimensions.height;
+                            }
+                            
+                            variantList.Add(new VideoVariant(variantUrlStr, bitrate, width, height));
+                        }
+                        
+                        variants = variantList.ToArray();
+                        
+                        var bestVariant = variantList
+                            .OrderByDescending(v => v.Bitrate ?? 0)
                             .FirstOrDefault();
                         
-                        if (bestVariant.ValueKind != JsonValueKind.Undefined &&
-                            bestVariant.TryGetProperty("url", out var videoUrl))
-                        {
-                            url = videoUrl.GetString();
-                        }
+                        url = bestVariant?.Url;
                     }
                 }
                 
-                if (url != null)
+                if (url != null || variants != null)
                 {
-                    media.Add(new Media(type, url));
+                    media.Add(new Media(mediaType, url, variants));
                 }
             }
         }
         
         return new Tweet(tweetId, text, media.ToArray());
+    }
+
+    private static (int? width, int? height) ExtractDimensionsFromUrl(string url)
+    {
+        var match = Regex.Match(url, @"/(\d+)x(\d+)/");
+        if (match.Success && int.TryParse(match.Groups[1].Value, out var width) && 
+            int.TryParse(match.Groups[2].Value, out var height))
+        {
+            return (width, height);
+        }
+        return (null, null);
     }
 }
 
