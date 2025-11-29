@@ -1,58 +1,71 @@
-name: CI/CD Pipeline
+name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   pull_request:
-    branches: [ main ]
+
+permissions:
+  contents: read
+  packages: write
 
 env:
   DOTNET_VERSION: '8.0.x'
 
 jobs:
-  build-and-test:
-    name: Build and Test
+  test:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0  # Required for GitVersion to work properly
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    - name: Install Cake
-      run: |
-        dotnet tool install -g Cake.Tool
-        echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
+      - name: Restore .NET tools
+        run: dotnet tool restore
 
-    - name: Install GitVersion
-      uses: gittools/actions/gitversion/setup@v3.0.0
-      with:
-        versionSpec: '5.x'
+      - name: Ensure build script is executable
+        run: chmod +x ./build.sh
 
-    # Run tests on all PRs and main branch
-    - name: Run Tests
-      run: |
-        dotnet-cake --target="Default" --configuration="Release"
-      if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      - name: Run Cake tests
+        run: ./build.sh --target=Test --configuration=Release
 
-    # Only run publishing on main branch (after tests pass)
-    - name: Publish to NuGet (on main branch)
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      run: |
-        dotnet-cake --target="CI" --configuration="Release"
-      env:
-        NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
 
-    # Upload artifacts
-    - name: Upload artifacts
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      uses: actions/upload-artifact@v4
-      with:
-        name: nuget-packages
-        path: ./artifacts/*.nupkg
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore .NET tools
+        run: dotnet tool restore
+
+      - name: Ensure build script is executable
+        run: chmod +x ./build.sh
+
+      - name: Publish NuGet package
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: ./build.sh --target=NuGetPush --configuration=Release
+
+      - name: Upload NuGet artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: artifacts/*.nupkg
