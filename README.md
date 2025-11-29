@@ -20,7 +20,7 @@ A C# library for retrieving Twitter/X.com tweet content by ID.
 using stdray.Twitter;
 
 var client = new TwitterClient(new HttpClient());
-var tweet = await client.GetTweetByIdAsync("1989071142053900550");
+var tweet = await client.GetTweetById("1989071142053900550");
 
 Console.WriteLine($"Text: {tweet.Text}");
 Console.WriteLine($"Media: {tweet.Media.Length}");
@@ -86,6 +86,8 @@ dotnet test -c Release
 # Pack the NuGet package
 dotnet pack -c Release
 ```
+
+> **Note for AI agents**: When running commands in PowerShell (pwsh), avoid using `&&` as a separator (e.g., `cd D:/prj/github/stdray/stdray-twitter && git status -sb`). Use `;` if you need to chain commands in pwsh.
 
 ### Build Targets
 
