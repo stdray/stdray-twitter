@@ -86,24 +86,6 @@ DotNetMSBuildSettings CreateVersionMsBuildSettings(GitVersionResult versionInfo)
         .WithProperty("GitCommitDate", commitDate);
 }
 
-void UpdateGithubStepSummary(string versionValue)
-{
-    var summaryPath = EnvironmentVariable("GITHUB_STEP_SUMMARY");
-
-    if (string.IsNullOrWhiteSpace(summaryPath))
-    {
-        return;
-    }
-
-    var builder = new StringBuilder()
-        .AppendLine("## NuGet Package Version")
-        .AppendLine()
-        .AppendLine($"- Version: `{versionValue}`")
-        .AppendLine();
-
-    System.IO.File.AppendAllText(summaryPath, builder.ToString());
-}
-
 GitVersionResult ResolveGitVersion()
 {
     var psi = new ProcessStartInfo
@@ -233,8 +215,6 @@ Task("Pack")
     .Does(() =>
 {
     EnsureDirectoryExists(artifactsDir);
-
-    UpdateGithubStepSummary(gitVersion.NuGetPackageVersion ?? gitVersion.FullSemVer);
 
     var packSettings = new DotNetPackSettings
     {
