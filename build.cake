@@ -1,4 +1,5 @@
 #tool "nuget:?package=coverlet.console&version=6.0.4"
+#tool "nuget:?package=GitVersion.Tool&version=6.4.0"
 
 var target = Argument("target", "Default");
 var configuration = Argument("configuration", "Release");
@@ -13,7 +14,8 @@ try
 {
     var gitVersionInfo = GitVersion(new GitVersionSettings
     {
-        OutputType = GitVersionOutput.Json
+        OutputType = GitVersionOutput.Json,
+        NoFetch = true
     });
 
     version = gitVersionInfo.LegacySemVerPadded;

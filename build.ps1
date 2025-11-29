@@ -1,67 +1,16 @@
-#!/usr/bin/env pwsh
-
-<#
-.DESCRIPTION
-Bootstraps the Cake build runner and executes the build script.
-#>
-
-[CmdletBinding()]
-Param(
-    [string]$Script = "build.cake",
+param(
     [string]$Target = "Default",
-    [string]$Configuration = "Release",
-    [string]$Verbosity = "Normal",
-    [switch]$Experimental,
-    [switch]$Mono,
-    [switch]$SkipToolPackageRestore,
-    [switch]$ScriptArgs
+    [string]$Configuration = "Release"
 )
 
-Write-Host "PowerShell $($PSVersionTable.PSEdition) version $($PSVersionTable.PSVersion)" -ForegroundColor Green
+$script = Join-Path $PSScriptRoot "build.cake"
 
-$CakePath = Join-Path $PSScriptRoot "tools" "Cake.Tool" ".store" "cake.tool" "*" "tools" "net6.0" "any" "cake.exe"
-$CakeToolPath = $CakePath
-$Addins = Join-Path $PSScriptRoot ".cake" "addins"
-$Modules = Join-Path $PSScriptRoot ".cake" "modules"
-
-if ((Resolve-Path $PSScriptRoot).Path -cmatch "^([a-z])+:") {
-    Write-Warning "Running build script from a drive that is not the system drive might lead to errors when using NuGet tools. Please consider running from the system drive."
+dotnet tool restore
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
 }
 
-if ($Mono) {
-    $ToolPath = Join-Path $PSScriptRoot "tools" ".store" "cake.tool" "*" "tools" "net6.0" "any" "cake.exe"
-    $ExePath = Get-ChildItem $ToolPath | Select-Object -First 1 | ForEach-Object{ $_.FullName }
-    if ($null -eq $ExePath) {
-        $ExePath = "mono"
-    }
-    $CakeExePath = $ExePath
-} else {
-    $CakeExePath = $CakeToolPath
-}
+$arguments = @($script, "--target=$Target", "--configuration=$Configuration") + $args
 
-$UseDryRun = $Experimental.IsPresent
-$UseMono = $Mono.IsPresent
-$SkipToolPackageRestore = $SkipToolPackageRestore.IsPresent
-$ScriptArgs = @()
-
-if ($UseMono) {
-    [string[]]$ScriptArgs = @($Script, "--target=""$Target""", "--configuration=""$Configuration""", "--verbosity=""$Verbosity""")
-    if ($UseDryRun) {
-        $ScriptArgs += "--experimental"
-    }
-    if ($SkipToolPackageRestore) {
-        $ScriptArgs += "--skip-package-restore"
-    }
-    & mono "$CakeExePath" $ScriptArgs
-} else {
-    [string[]]$ScriptArgs = @("--target=""$Target""", "--configuration=""$Configuration""", "--verbosity=""$Verbosity""", "--bootstrap")
-    if ($UseDryRun) {
-        $ScriptArgs += "--experimental"
-    }
-    if ($SkipToolPackageRestore) {
-        $ScriptArgs += "--skip-package-restore"
-    }
-    & "$CakeExePath" $Script $ScriptArgs
-}
-
+dotnet cake @arguments
 exit $LASTEXITCODE

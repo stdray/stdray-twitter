@@ -3,34 +3,33 @@ branches:
   main:
     regex: ^master$|^main$
     mode: ContinuousDelivery
-    tag: ""
+    label: ""
     increment: Patch
-    is-source-branch-for: ['*']
   develop:
     regex: ^dev(elop)?(ment)?$
     mode: ContinuousDeployment
-    tag: 'alpha'
+    label: 'alpha'
     increment: Minor
   feature:
     regex: ^features?[/-]
     mode: ContinuousDeployment
-    tag: 'beta'
+    label: 'beta'
   pull-request:
     regex: ^(pull|pull-requests|pr)[/-]
     mode: ContinuousDeployment
-    tag: 'pr'
+    label: 'pr'
   hotfix:
     regex: ^hotfix[/-]
     mode: ContinuousDelivery
-    tag: 'beta'
+    label: 'beta'
     increment: Patch
   release:
     regex: ^releases?[/-]
     mode: ContinuousDelivery
-    tag: 'rc'
+    label: 'rc'
     increment: Patch
   support:
     regex: ^support[/-]
     mode: ContinuousDelivery
-    tag: ""
+    label: ""
     increment: Patch
