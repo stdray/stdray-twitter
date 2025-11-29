@@ -2,6 +2,7 @@
 #tool "nuget:?package=GitVersion.Tool&version=6.4.0"
 
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 
 var target = Argument("target", "Default");
@@ -53,6 +54,24 @@ DotNetMSBuildSettings CreateVersionMsBuildSettings(GitVersionResult versionInfo)
         .WithProperty("FileVersion", fileVersion)
         .WithProperty("GitShortSha", shortSha)
         .WithProperty("GitCommitDate", commitDate);
+}
+
+void UpdateGithubStepSummary(string versionValue)
+{
+    var summaryPath = EnvironmentVariable("GITHUB_STEP_SUMMARY");
+
+    if (string.IsNullOrWhiteSpace(summaryPath))
+    {
+        return;
+    }
+
+    var builder = new StringBuilder()
+        .AppendLine("## NuGet Package Version")
+        .AppendLine()
+        .AppendLine($"- Version: `{versionValue}`")
+        .AppendLine();
+
+    System.IO.File.AppendAllText(summaryPath, builder.ToString());
 }
 
 GitVersionResult ResolveGitVersion()
@@ -178,6 +197,8 @@ Task("Pack")
     .Does(() =>
 {
     EnsureDirectoryExists(artifactsDir);
+
+    UpdateGithubStepSummary(gitVersion.FullSemVer);
 
     var packSettings = new DotNetPackSettings
     {
