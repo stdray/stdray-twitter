@@ -1,7 +1,7 @@
-using Karbonio.Twi;
+using Karbonio.Twitter;
 using Xunit;
 
-namespace Karbonio.Twi.Tests;
+namespace Karbonio.Twitter.Tests;
 
 public class TwitterClientTest
 {
