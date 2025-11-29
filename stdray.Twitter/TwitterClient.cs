@@ -55,7 +55,8 @@ public record Media(MediaType Type, string? Url, VideoVariant[]? Variants);
 /// </summary>
 public class TwitterClient(HttpClient httpClient)
 {
-    static readonly string BearerToken = Uri.UnescapeDataString("AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA");
+    const string EncodedBearerToken = "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
+    static readonly string BearerToken = Uri.UnescapeDataString(EncodedBearerToken);
     const string GraphQLEndpoint = "https://x.com/i/api/graphql/2ICDjqPd81tulZcYrtpTuQ/TweetResultByRestId";
     const string GuestTokenEndpoint = "https://api.x.com/1.1/guest/activate.json";
 
