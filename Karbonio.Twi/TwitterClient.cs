@@ -30,7 +30,7 @@ public class TwitterClient(HttpClient httpClient)
         return ParseTweet(json, tweetId);
     }
 
-    private async Task<string> CallGraphQLApiAsync(string endpoint, string tweetId, Dictionary<string, string> query)
+    async Task<string> CallGraphQLApiAsync(string endpoint, string tweetId, Dictionary<string, string> query)
     {
         var guestToken = await FetchGuestTokenAsync();
         
@@ -79,7 +79,7 @@ public class TwitterClient(HttpClient httpClient)
         return json;
     }
 
-    private async Task<string> FetchGuestTokenAsync()
+    async Task<string> FetchGuestTokenAsync()
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, GuestTokenEndpoint);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", BearerToken);
@@ -101,7 +101,7 @@ public class TwitterClient(HttpClient httpClient)
             ?? throw new InvalidOperationException("Failed to get guest token");
     }
 
-    private static Dictionary<string, string> BuildGraphQLQuery(string tweetId)
+    static Dictionary<string, string> BuildGraphQLQuery(string tweetId)
     {
         var variables = JsonSerializer.Serialize(new
         {
@@ -144,11 +144,11 @@ public class TwitterClient(HttpClient httpClient)
         };
     }
 
-    private static Tweet ParseTweet(string json, string tweetId)
+    static Tweet ParseTweet(string json, string tweetId)
     {
         var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
-        
+
         if (root.TryGetProperty("errors", out var errors))
         {
             var errorMsg = errors.EnumerateArray()
@@ -156,28 +156,35 @@ public class TwitterClient(HttpClient httpClient)
                 .FirstOrDefault() ?? "Unknown error";
             throw new InvalidOperationException($"Twitter API error: {errorMsg}");
         }
-        
+
         var result = root.GetProperty("data").GetProperty("tweetResult").GetProperty("result");
         var typename = result.TryGetProperty("__typename", out var tn) ? tn.GetString() : "";
-        
+
         if (typename == "TweetUnavailable" || typename == "TweetTombstone")
         {
             throw new InvalidOperationException("Tweet is unavailable");
         }
-        
+
         if (typename == "TweetWithVisibilityResults")
         {
             result = result.GetProperty("tweet");
         }
-        
+
         var legacy = result.GetProperty("legacy");
-        
-        var text = (legacy.TryGetProperty("full_text", out var ft) ? ft.GetString() 
-            : legacy.TryGetProperty("text", out var t) ? t.GetString() 
+
+        var text = (legacy.TryGetProperty("full_text", out var ft) ? ft.GetString()
+            : legacy.TryGetProperty("text", out var t) ? t.GetString()
             : null) ?? "";
-        
+
+        var media = ParseMedia(legacy);
+
+        return new Tweet(tweetId, text, media.ToArray());
+    }
+
+    static List<Media> ParseMedia(JsonElement legacy)
+    {
         var media = new List<Media>();
-        
+
         if (legacy.TryGetProperty("extended_entities", out var extendedEntities) &&
             extendedEntities.TryGetProperty("media", out var mediaArray))
         {
@@ -191,10 +198,10 @@ public class TwitterClient(HttpClient httpClient)
                     "animated_gif" => MediaType.AnimatedGif,
                     _ => throw new InvalidOperationException($"Unknown media type: {typeStr}")
                 };
-                
+
                 string? url = null;
                 VideoVariant[]? variants = null;
-                
+
                 if (mediaType == MediaType.Photo)
                 {
                     if (item.TryGetProperty("media_url_https", out var photoUrl))
@@ -208,22 +215,22 @@ public class TwitterClient(HttpClient httpClient)
                         videoInfo.TryGetProperty("variants", out var variantsJson))
                     {
                         var variantList = new List<VideoVariant>();
-                        
+
                         foreach (var variant in variantsJson.EnumerateArray())
                         {
                             if (!variant.TryGetProperty("url", out var variantUrl))
                                 continue;
-                            
+
                             var variantUrlStr = variantUrl.GetString();
                             if (variantUrlStr == null)
                                 continue;
-                            
+
                             int? bitrate = null;
                             if (variant.TryGetProperty("bitrate", out var br) && br.TryGetInt32(out var bitrateVal))
                             {
                                 bitrate = bitrateVal;
                             }
-                            
+
                             int? width = null, height = null;
                             if (variant.TryGetProperty("width", out var w) && w.TryGetInt32(out var widthVal))
                             {
@@ -233,38 +240,38 @@ public class TwitterClient(HttpClient httpClient)
                             {
                                 height = heightVal;
                             }
-                            
+
                             if (width == null || height == null)
                             {
                                 var dimensions = ExtractDimensionsFromUrl(variantUrlStr);
                                 width ??= dimensions.width;
                                 height ??= dimensions.height;
                             }
-                            
+
                             variantList.Add(new VideoVariant(variantUrlStr, bitrate, width, height));
                         }
-                        
+
                         variants = variantList.ToArray();
-                        
+
                         var bestVariant = variantList
                             .OrderByDescending(v => v.Bitrate ?? 0)
                             .FirstOrDefault();
-                        
+
                         url = bestVariant?.Url;
                     }
                 }
-                
+
                 if (url != null || variants != null)
                 {
                     media.Add(new Media(mediaType, url, variants));
                 }
             }
         }
-        
-        return new Tweet(tweetId, text, media.ToArray());
+
+        return media;
     }
 
-    private static (int? width, int? height) ExtractDimensionsFromUrl(string url)
+    static (int? width, int? height) ExtractDimensionsFromUrl(string url)
     {
         var match = Regex.Match(url, @"/(\d+)x(\d+)/");
         if (match.Success && int.TryParse(match.Groups[1].Value, out var width) && 
