@@ -35,24 +35,23 @@ jobs:
       with:
         versionSpec: '5.x'
 
-    # Run the complete build process using Cake
-    - name: Run Cake Build
+    # Run tests on all PRs and main branch
+    - name: Run Tests
       run: |
         dotnet-cake --target="Default" --configuration="Release"
-      env:
-        NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+      if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
 
-    # Only run publishing on main branch
+    # Only run publishing on main branch (after tests pass)
     - name: Publish to NuGet (on main branch)
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       run: |
-        dotnet-cake --target="Publish" --configuration="Release"
+        dotnet-cake --target="CI" --configuration="Release"
       env:
         NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
 
     # Upload artifacts
     - name: Upload artifacts
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: actions/upload-artifact@v4
       with:
         name: nuget-packages

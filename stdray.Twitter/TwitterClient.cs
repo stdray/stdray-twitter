@@ -4,25 +4,68 @@ using System.Text.RegularExpressions;
 
 namespace stdray.Twitter;
 
+/// <summary>
+/// Represents the type of media in a tweet.
+/// </summary>
 public enum MediaType
 {
+    /// <summary>
+    /// A photo media type.
+    /// </summary>
     Photo,
+
+    /// <summary>
+    /// A video media type.
+    /// </summary>
     Video,
+
+    /// <summary>
+    /// An animated GIF media type.
+    /// </summary>
     AnimatedGif
 }
 
+/// <summary>
+/// Represents a video variant with its URL, bitrate, and dimensions.
+/// </summary>
+/// <param name="Url">The URL of the video variant.</param>
+/// <param name="Bitrate">The bitrate of the video in bits per second.</param>
+/// <param name="Width">The width of the video in pixels.</param>
+/// <param name="Height">The height of the video in pixels.</param>
 public record VideoVariant(string Url, int? Bitrate, int? Width, int? Height);
 
+/// <summary>
+/// Represents a tweet with its ID, text content, and associated media.
+/// </summary>
+/// <param name="Id">The unique identifier of the tweet.</param>
+/// <param name="Text">The text content of the tweet.</param>
+/// <param name="Media">An array of media objects associated with the tweet.</param>
 public record Tweet(string Id, string Text, Media[] Media);
 
+/// <summary>
+/// Represents media content in a tweet.
+/// </summary>
+/// <param name="Type">The type of media (Photo, Video, or AnimatedGif).</param>
+/// <param name="Url">The URL of the media content, if applicable.</param>
+/// <param name="Variants">An array of video variants, if the media is a video or animated GIF.</param>
 public record Media(MediaType Type, string? Url, VideoVariant[]? Variants);
 
+/// <summary>
+/// A client for retrieving tweet content from Twitter/X.com by ID.
+/// </summary>
 public class TwitterClient(HttpClient httpClient)
 {
     static readonly string BearerToken = Uri.UnescapeDataString("AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA");
     const string GraphQLEndpoint = "https://x.com/i/api/graphql/2ICDjqPd81tulZcYrtpTuQ/TweetResultByRestId";
     const string GuestTokenEndpoint = "https://api.x.com/1.1/guest/activate.json";
 
+    /// <summary>
+    /// Retrieves a tweet by its ID.
+    /// </summary>
+    /// <param name="tweetId">The unique identifier of the tweet to retrieve.</param>
+    /// <returns>A <see cref="Tweet"/> object containing the tweet's ID, text, and media.</returns>
+    /// <exception cref="HttpRequestException">Thrown when the HTTP request fails.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when the Twitter API returns an error or the tweet is unavailable.</exception>
     public async Task<Tweet> GetTweetById(string tweetId)
     {
         var query = BuildGraphQLQuery(tweetId);
@@ -94,16 +137,16 @@ public class TwitterClient(HttpClient httpClient)
         request.Content = new StringContent("");
 
         var response = await httpClient.SendAsync(request);
-        
+
         if (!response.IsSuccessStatusCode)
         {
             var errorContent = await response.Content.ReadAsStringAsync();
             throw new HttpRequestException($"Failed to get guest token: HTTP {response.StatusCode}: {errorContent}");
         }
-        
+
         var json = await response.Content.ReadAsStringAsync();
         var doc = JsonDocument.Parse(json);
-        return doc.RootElement.GetProperty("guest_token").GetString() 
+        return doc.RootElement.GetProperty("guest_token").GetString()
             ?? throw new InvalidOperationException("Failed to get guest token");
     }
 
@@ -116,7 +159,7 @@ public class TwitterClient(HttpClient httpClient)
             includePromotedContent = false,
             withVoice = false
         });
-        
+
         var features = JsonSerializer.Serialize(new
         {
             creator_subscriptions_tweet_preview_api_enabled = true,
@@ -139,9 +182,9 @@ public class TwitterClient(HttpClient httpClient)
             responsive_web_graphql_timeline_navigation_enabled = true,
             responsive_web_enhance_cards_enabled = false
         });
-        
+
         var fieldToggles = JsonSerializer.Serialize(new { withArticleRichContentState = false });
-        
+
         return new Dictionary<string, string>
         {
             ["variables"] = variables,
@@ -280,7 +323,7 @@ public class TwitterClient(HttpClient httpClient)
     static (int? width, int? height) ExtractDimensionsFromUrl(string url)
     {
         var match = Regex.Match(url, @"/(\d+)x(\d+)/");
-        if (match.Success && int.TryParse(match.Groups[1].Value, out var width) && 
+        if (match.Success && int.TryParse(match.Groups[1].Value, out var width) &&
             int.TryParse(match.Groups[2].Value, out var height))
         {
             return (width, height);

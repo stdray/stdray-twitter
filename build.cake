@@ -29,10 +29,10 @@ var packageName = "stdray.Twitter";
 var packageDescription = "A C# library for retrieving Twitter/X.com tweet content by ID";
 var packageAuthors = new[] { "stdray" };
 var packageOwners = new[] { "stdray" };
-var projectUrl = "https://github.com/stdray/test-twi";
+var projectUrl = "https://github.com/stdray/stdray-twitter";
 var copyright = $"Copyright (c) {DateTime.Now.Year} stdray";
 var tags = new[] { "twitter", "x.com", "tweets", "social-media", "api" };
-var repositoryUrl = "https://github.com/stdray/test-twi";
+var repositoryUrl = "https://github.com/stdray/stdray-twitter";
 var repositoryType = "git";
 
 var artifactsDir = "./artifacts";
