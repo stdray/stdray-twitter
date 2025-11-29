@@ -2,6 +2,7 @@
 #tool "nuget:?package=GitVersion.Tool&version=6.4.0"
 
 using System.Diagnostics;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 
@@ -37,9 +38,38 @@ string RequireGitVersionField(string value, string propertyName)
     return value;
 }
 
+string CreateNuGetPackageVersion(GitVersionResult versionInfo)
+{
+    if (versionInfo is null)
+    {
+        throw new CakeException("GitVersion information is not available.");
+    }
+
+    var fullSemVer = RequireGitVersionField(versionInfo.FullSemVer, nameof(versionInfo.FullSemVer));
+
+    if (string.IsNullOrWhiteSpace(versionInfo.PreReleaseTag) || !string.IsNullOrWhiteSpace(versionInfo.PreReleaseLabel))
+    {
+        return fullSemVer;
+    }
+
+    if (!versionInfo.PreReleaseTag.All(char.IsDigit))
+    {
+        return fullSemVer;
+    }
+
+    var baseVersion = !string.IsNullOrWhiteSpace(versionInfo.MajorMinorPatch)
+        ? versionInfo.MajorMinorPatch
+        : fullSemVer.Split('-').First();
+
+    return $"{baseVersion}-ci.{versionInfo.PreReleaseTag}";
+}
+
 DotNetMSBuildSettings CreateVersionMsBuildSettings(GitVersionResult versionInfo)
 {
     var versionValue = RequireGitVersionField(versionInfo.FullSemVer, nameof(versionInfo.FullSemVer));
+    var packageVersion = RequireGitVersionField(
+        string.IsNullOrWhiteSpace(versionInfo.NuGetPackageVersion) ? CreateNuGetPackageVersion(versionInfo) : versionInfo.NuGetPackageVersion,
+        nameof(versionInfo.NuGetPackageVersion));
     var informationalVersion = RequireGitVersionField(versionInfo.InformationalVersion, nameof(versionInfo.InformationalVersion));
     var assemblyVersion = RequireGitVersionField(versionInfo.AssemblySemVer, nameof(versionInfo.AssemblySemVer));
     var fileVersion = RequireGitVersionField(versionInfo.AssemblySemFileVer, nameof(versionInfo.AssemblySemFileVer));
@@ -47,8 +77,8 @@ DotNetMSBuildSettings CreateVersionMsBuildSettings(GitVersionResult versionInfo)
     var commitDate = RequireGitVersionField(versionInfo.CommitDate, nameof(versionInfo.CommitDate));
 
     return new DotNetMSBuildSettings()
-        .WithProperty("Version", versionValue)
-        .WithProperty("PackageVersion", versionValue)
+        .WithProperty("Version", packageVersion)
+        .WithProperty("PackageVersion", packageVersion)
         .WithProperty("InformationalVersion", informationalVersion)
         .WithProperty("AssemblyVersion", assemblyVersion)
         .WithProperty("FileVersion", fileVersion)
@@ -119,6 +149,10 @@ class GitVersionResult
     public string CommitDate { get; set; }
     public string AssemblySemVer { get; set; }
     public string AssemblySemFileVer { get; set; }
+    public string PreReleaseLabel { get; set; }
+    public string PreReleaseTag { get; set; }
+    public string MajorMinorPatch { get; set; }
+    public string NuGetPackageVersion { get; set; }
 }
 
 DotNetBuildSettings CreateVersionedBuildSettings(GitVersionResult versionInfo) =>
@@ -161,10 +195,12 @@ Task("Version")
     .Does(() =>
 {
     gitVersion = ResolveGitVersion();
+    gitVersion.NuGetPackageVersion = CreateNuGetPackageVersion(gitVersion);
 
     Information("GitVersion FullSemVer: {0}", gitVersion.FullSemVer);
     Information("GitVersion InformationalVersion: {0}", gitVersion.InformationalVersion);
     Information("GitVersion ShortSha: {0}", gitVersion.ShortSha);
+    Information("NuGet Package Version: {0}", gitVersion.NuGetPackageVersion);
 });
 
 Task("Build")
@@ -198,7 +234,7 @@ Task("Pack")
 {
     EnsureDirectoryExists(artifactsDir);
 
-    UpdateGithubStepSummary(gitVersion.FullSemVer);
+    UpdateGithubStepSummary(gitVersion.NuGetPackageVersion ?? gitVersion.FullSemVer);
 
     var packSettings = new DotNetPackSettings
     {
