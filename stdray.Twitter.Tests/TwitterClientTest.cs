@@ -19,9 +19,10 @@ public class TwitterClientTest
         Assert.Equal(expectedVideoCount, videoCount);
         Assert.Contains(expectedText, tweet.Text, StringComparison.OrdinalIgnoreCase);
     }
-    
+
     public static TheoryData<string, int, int, string> TweetData => new()
     {
-        { "1989071142053900550", 3, 1, "доФфига" }
+        { "1989071142053900550", 3, 1, "доФфига" },
+        { "1998272699546882256", 0, 1, "Ranma" }
     };
 }

@@ -70,11 +70,11 @@ public class TwitterClient(HttpClient httpClient)
     public async Task<Tweet> GetTweetById(string tweetId)
     {
         var query = BuildGraphQlQuery(tweetId);
-        var json = await CallGraphQl(GraphQlEndpoint, tweetId, query);
+        var json = await CallGraphQl(GraphQlEndpoint, query);
         return ParseTweet(json, tweetId);
     }
 
-    async Task<string> CallGraphQl(string endpoint, string tweetId, Dictionary<string, string> query)
+    async Task<string> CallGraphQl(string endpoint, Dictionary<string, string> query)
     {
         var guestToken = await FetchGuestToken();
 
@@ -134,7 +134,7 @@ public class TwitterClient(HttpClient httpClient)
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", BearerToken);
         AddConstantHeaders(request);
         request.Headers.Remove("Accept"); // Remove the default Accept header
-        request.Headers.Add("Accept", "application/json");  // Add guest token specific Accept header
+        request.Headers.Add("Accept", "application/json");  // Add a guest token specific Accept header
         request.Content = new StringContent("");
 
         var response = await httpClient.SendAsync(request);
