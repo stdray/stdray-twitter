@@ -1,61 +1,17 @@
-using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace stdray.Twitter;
 
 /// <summary>
-/// Represents the type of media in a tweet.
-/// </summary>
-public enum MediaType
-{
-    /// <summary>
-    /// A photo media type.
-    /// </summary>
-    Photo,
-
-    /// <summary>
-    /// A video media type.
-    /// </summary>
-    Video,
-
-    /// <summary>
-    /// An animated GIF media type.
-    /// </summary>
-    AnimatedGif
-}
-
-/// <summary>
-/// Represents a video variant with its URL, bitrate, and dimensions.
-/// </summary>
-/// <param name="Url">The URL of the video variant.</param>
-/// <param name="Bitrate">The bitrate of the video in bits per second.</param>
-/// <param name="Width">The width of the video in pixels.</param>
-/// <param name="Height">The height of the video in pixels.</param>
-public record VideoVariant(string Url, int? Bitrate, int? Width, int? Height);
-
-/// <summary>
-/// Represents a tweet with its ID, text content, and associated media.
-/// </summary>
-/// <param name="Id">The unique identifier of the tweet.</param>
-/// <param name="Text">The text content of the tweet.</param>
-/// <param name="Media">An array of media objects associated with the tweet.</param>
-public record Tweet(string Id, string Text, Media[] Media);
-
-/// <summary>
-/// Represents media content in a tweet.
-/// </summary>
-/// <param name="Type">The type of media (Photo, Video, or AnimatedGif).</param>
-/// <param name="Url">The URL of the media content, if applicable.</param>
-/// <param name="Variants">An array of video variants, if the media is a video or animated GIF.</param>
-public record Media(MediaType Type, string? Url, VideoVariant[]? Variants);
-
-/// <summary>
 /// A client for retrieving tweet content from Twitter/X.com by ID.
 /// </summary>
 public class TwitterClient(HttpClient httpClient)
 {
-    const string EncodedBearerToken = "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
+    const string EncodedBearerToken =
+        "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
+
     static readonly string BearerToken = Uri.UnescapeDataString(EncodedBearerToken);
     const string GraphQlEndpoint = "https://x.com/i/api/graphql/2ICDjqPd81tulZcYrtpTuQ/TweetResultByRestId";
     const string GuestTokenEndpoint = "https://api.x.com/1.1/guest/activate.json";
@@ -70,11 +26,12 @@ public class TwitterClient(HttpClient httpClient)
     public async Task<Tweet> GetTweetById(string tweetId)
     {
         var query = BuildGraphQlQuery(tweetId);
-        var json = await CallGraphQl(GraphQlEndpoint, query);
-        return ParseTweet(json, tweetId);
+        var json = await CallGraphQl(GraphQlEndpoint, query)
+                   ?? throw new InvalidOperationException("Failed to parse Twitter response");
+        return GetTweet(json, tweetId);
     }
 
-    async Task<string> CallGraphQl(string endpoint, Dictionary<string, string> query)
+    async Task<TweetResponseDto?> CallGraphQl(string endpoint, Dictionary<string, string> query)
     {
         var guestToken = await FetchGuestToken();
 
@@ -82,47 +39,30 @@ public class TwitterClient(HttpClient httpClient)
         var url = $"{endpoint}?{queryString}";
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", BearerToken);
+        SetDefaultHeaders(request);
         request.Headers.Add("x-guest-token", guestToken);
-        AddConstantHeaders(request);
 
         var response = await httpClient.SendAsync(request);
 
         if (!response.IsSuccessStatusCode)
         {
             var errorContent = await response.Content.ReadAsStringAsync();
-            var errorMsg = errorContent.Length > 500 ? errorContent.Substring(0, 500) + "..." : errorContent;
+            var errorMsg = errorContent.Length > 500 ? errorContent[..500] + "..." : errorContent;
             throw new HttpRequestException($"HTTP {response.StatusCode}: {errorMsg}");
         }
 
-        var json = await response.Content.ReadAsStringAsync();
-        var doc = JsonDocument.Parse(json);
-
-        if (doc.RootElement.TryGetProperty("errors", out var errors))
-        {
-            var errorMessages = errors.EnumerateArray()
-                .Select(e => e.TryGetProperty("message", out var msg) ? msg.GetString() : "Unknown error")
-                .Where(m => m != null)
-                .Distinct()
-                .ToList();
-
-            var errorText = string.Join(", ", errorMessages);
-            if (errorText.Contains("not authorized", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException($"Not authorized: {errorText}");
-            }
-            throw new InvalidOperationException($"Twitter API error: {errorText}");
-        }
-
-        return json;
+        return await response.Content.ReadFromJsonAsync(GraphQlContext.Default.TweetResponseDto);
     }
 
-    static void AddConstantHeaders(HttpRequestMessage request)
+    static void SetDefaultHeaders(HttpRequestMessage request)
     {
+        request.Headers.Remove("Accept");
+        request.Headers.Authorization = new("Bearer", BearerToken);
         request.Headers.Add("x-twitter-client-language", "en");
         request.Headers.Add("x-twitter-active-user", "yes");
-        request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-        request.Headers.Add("Accept", "application/json, text/plain, */*");
+        request.Headers.Add("User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        request.Headers.Add("Accept", "application/json");
         request.Headers.Add("Accept-Language", "en-US,en;q=0.9");
         request.Headers.Add("Referer", "https://x.com/");
         request.Headers.Add("Origin", "https://x.com");
@@ -131,11 +71,8 @@ public class TwitterClient(HttpClient httpClient)
     async Task<string> FetchGuestToken()
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, GuestTokenEndpoint);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", BearerToken);
-        AddConstantHeaders(request);
-        request.Headers.Remove("Accept"); // Remove the default Accept header
-        request.Headers.Add("Accept", "application/json");  // Add a guest token specific Accept header
-        request.Content = new StringContent("");
+        SetDefaultHeaders(request);
+        // request.Content = new StringContent("");
 
         var response = await httpClient.SendAsync(request);
 
@@ -148,7 +85,7 @@ public class TwitterClient(HttpClient httpClient)
         var json = await response.Content.ReadAsStringAsync();
         var doc = JsonDocument.Parse(json);
         return doc.RootElement.GetProperty("guest_token").GetString()
-            ?? throw new InvalidOperationException("Failed to get guest token");
+               ?? throw new InvalidOperationException("Failed to get guest token");
     }
 
     static Dictionary<string, string> BuildGraphQlQuery(string tweetId)
@@ -194,142 +131,110 @@ public class TwitterClient(HttpClient httpClient)
         };
     }
 
-    static Tweet ParseTweet(string json, string tweetId)
+    static Tweet GetTweet(TweetResponseDto response, string tweetId)
     {
-        var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-
-        if (root.TryGetProperty("errors", out var errors))
+        if (response.Errors is { Length: > 0 })
         {
-            var errorMsg = errors.EnumerateArray()
-                .Select(e => e.TryGetProperty("message", out var msg) ? msg.GetString() : "Unknown error")
-                .FirstOrDefault() ?? "Unknown error";
-            throw new InvalidOperationException($"Twitter API error: {errorMsg}");
+            var errorMessages = response.Errors
+                .Select(e => e.Message)
+                .Where(m => !string.IsNullOrWhiteSpace(m))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            var errorText = errorMessages.Length > 0 ? string.Join(", ", errorMessages) : "Unknown error";
+            if (errorText.Contains("not authorized", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"Not authorized: {errorText}");
+            }
+
+            throw new InvalidOperationException($"Twitter API error: {errorText}");
         }
 
-        var result = root.GetProperty("data").GetProperty("tweetResult").GetProperty("result");
-        var typename = result.TryGetProperty("__typename", out var tn) ? tn.GetString() : "";
+        var resolvedTweet = ResolveTweet(response.Data?.TweetResult?.Result)
+                            ?? throw new InvalidOperationException("Tweet is unavailable");
 
-        if (typename == "TweetUnavailable" || typename == "TweetTombstone")
+        var typeName = resolvedTweet.TypeName ?? string.Empty;
+        if (typeName is "TweetUnavailable" or "TweetTombstone")
         {
             throw new InvalidOperationException("Tweet is unavailable");
         }
 
-        if (typename == "TweetWithVisibilityResults")
-        {
-            result = result.GetProperty("tweet");
-        }
+        var legacy = resolvedTweet.Legacy ??
+                     throw new InvalidOperationException("Tweet payload is missing legacy data");
+        var text = legacy.FullText ?? legacy.Text ?? string.Empty;
+        var media = ParseMedia(legacy.ExtendedEntities?.Media).ToArray();
 
-        var legacy = result.GetProperty("legacy");
-
-        var text = (legacy.TryGetProperty("full_text", out var ft) ? ft.GetString()
-            : legacy.TryGetProperty("text", out var t) ? t.GetString()
-            : null) ?? "";
-
-        var media = ParseMedia(legacy);
-
-        return new Tweet(tweetId, text, media.ToArray());
+        return new Tweet(tweetId, text, media);
     }
 
-    static List<Media> ParseMedia(JsonElement legacy)
+    static TweetResultBodyDto? ResolveTweet(TweetResultBodyDto? result) => result switch
     {
-        var media = new List<Media>();
+        null => null,
+        { TypeName: "TweetWithVisibilityResults" } => result.Tweet,
+        _ => result
+    };
 
-        if (legacy.TryGetProperty("extended_entities", out var extendedEntities) &&
-            extendedEntities.TryGetProperty("media", out var mediaArray))
+
+    static IEnumerable<Media> ParseMedia(MediaEntityDto[]? mediaArray)
+    {
+        foreach (var item in mediaArray ?? [])
         {
-            foreach (var item in mediaArray.EnumerateArray())
+            var mediaType = ParseType(item.Type);
+            if (mediaType == MediaType.Photo && item.MediaUrlHttps is { } url)
             {
-                var typeStr = item.TryGetProperty("type", out var typeProp) ? typeProp.GetString() ?? "" : "";
-                MediaType mediaType = typeStr switch
-                {
-                    "photo" => MediaType.Photo,
-                    "video" => MediaType.Video,
-                    "animated_gif" => MediaType.AnimatedGif,
-                    _ => throw new InvalidOperationException($"Unknown media type: {typeStr}")
-                };
-
-                string? url = null;
-                VideoVariant[]? variants = null;
-
-                if (mediaType == MediaType.Photo)
-                {
-                    if (item.TryGetProperty("media_url_https", out var photoUrl))
-                    {
-                        url = photoUrl.GetString();
-                    }
-                }
-                else if (mediaType is MediaType.Video or MediaType.AnimatedGif)
-                {
-                    if (item.TryGetProperty("video_info", out var videoInfo) &&
-                        videoInfo.TryGetProperty("variants", out var variantsJson))
-                    {
-                        var variantList = new List<VideoVariant>();
-
-                        foreach (var variant in variantsJson.EnumerateArray())
-                        {
-                            if (!variant.TryGetProperty("url", out var variantUrl))
-                                continue;
-
-                            var variantUrlStr = variantUrl.GetString();
-                            if (variantUrlStr == null)
-                                continue;
-
-                            int? bitrate = null;
-                            if (variant.TryGetProperty("bitrate", out var br) && br.TryGetInt32(out var bitrateVal))
-                            {
-                                bitrate = bitrateVal;
-                            }
-
-                            int? width = null, height = null;
-                            if (variant.TryGetProperty("width", out var w) && w.TryGetInt32(out var widthVal))
-                            {
-                                width = widthVal;
-                            }
-                            if (variant.TryGetProperty("height", out var h) && h.TryGetInt32(out var heightVal))
-                            {
-                                height = heightVal;
-                            }
-
-                            if (width == null || height == null)
-                            {
-                                var dimensions = ExtractDimensionsFromUrl(variantUrlStr);
-                                width ??= dimensions.width;
-                                height ??= dimensions.height;
-                            }
-
-                            variantList.Add(new VideoVariant(variantUrlStr, bitrate, width, height));
-                        }
-
-                        variants = variantList.ToArray();
-
-                        var bestVariant = variantList
-                            .OrderByDescending(v => v.Bitrate ?? 0)
-                            .FirstOrDefault();
-
-                        url = bestVariant?.Url;
-                    }
-                }
-
-                if (url != null || variants != null)
-                {
-                    media.Add(new Media(mediaType, url, variants));
-                }
+                yield return new PhotoMedia(url);
+            }
+            else if (mediaType is MediaType.Video or MediaType.AnimatedGif)
+            {
+                var variants = item.VideoInfo?.Variants
+                    ?.Select(CreateVideoVariant)
+                    .OfType<VideoVariant>()
+                    .ToArray();
+                if (variants?.Length > 0)
+                    yield return new VideoMedia(mediaType, variants);
             }
         }
 
-        return media;
-    }
+        yield break;
 
-    static (int? width, int? height) ExtractDimensionsFromUrl(string url)
-    {
-        var match = Regex.Match(url, @"/(\d+)x(\d+)/");
-        if (match.Success && int.TryParse(match.Groups[1].Value, out var width) &&
-            int.TryParse(match.Groups[2].Value, out var height))
+        static MediaType ParseType(string? typeStr) => typeStr switch
         {
-            return (width, height);
+            "photo" => MediaType.Photo,
+            "video" => MediaType.Video,
+            "animated_gif" => MediaType.AnimatedGif,
+            _ => throw new InvalidOperationException($"Unknown media type: {typeStr}")
+        };
+
+        static VideoVariant? CreateVideoVariant(VideoVariantDto variant)
+        {
+            if (variant.Url is not { } variantUrlStr)
+                return null;
+
+            var bitrate = variant.Bitrate;
+            var width = variant.Width;
+            var height = variant.Height;
+
+            if (width == null || height == null)
+            {
+                var dimensions = ExtractDimensionsFromUrl(variantUrlStr);
+                width ??= dimensions.width;
+                height ??= dimensions.height;
+            }
+
+            var videoVariant = new VideoVariant(variantUrlStr, bitrate, width, height);
+            return videoVariant;
         }
-        return (null, null);
+
+        static (int? width, int? height) ExtractDimensionsFromUrl(string url)
+        {
+            var match = Regex.Match(url, @"/(\d+)x(\d+)/");
+            if (match.Success && int.TryParse(match.Groups[1].Value, out var width) &&
+                int.TryParse(match.Groups[2].Value, out var height))
+            {
+                return (width, height);
+            }
+
+            return (null, null);
+        }
     }
 }
-
