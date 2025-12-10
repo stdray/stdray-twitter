@@ -2,6 +2,12 @@ namespace stdray.Twitter.Tests;
 
 public class TwitterClientTest
 {
+    public static TheoryData<string, int, int, string> TweetData => new()
+    {
+        { "1989071142053900550", 3, 1, "доФфига" },
+        { "1998272699546882256", 0, 1, "Ranma" }
+    };
+
     [Theory]
     [MemberData(nameof(TweetData))]
     public async Task GetTweetByIdAsync_ShouldReturnCorrectMediaCountAndTextContent(string tweetId,
@@ -19,10 +25,4 @@ public class TwitterClientTest
         Assert.Equal(expectedVideoCount, videoCount);
         Assert.Contains(expectedText, tweet.Text, StringComparison.OrdinalIgnoreCase);
     }
-
-    public static TheoryData<string, int, int, string> TweetData => new()
-    {
-        { "1989071142053900550", 3, 1, "доФфига" },
-        { "1998272699546882256", 0, 1, "Ranma" }
-    };
 }

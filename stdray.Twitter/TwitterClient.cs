@@ -5,22 +5,21 @@ using System.Text.RegularExpressions;
 namespace stdray.Twitter;
 
 /// <summary>
-/// A client for retrieving tweet content from Twitter/X.com by ID.
+///     A client for retrieving tweet content from Twitter/X.com by ID.
 /// </summary>
 public class TwitterClient(HttpClient httpClient)
 {
-    const string EncodedBearerToken =
+    const string BearerToken =
         "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
 
-    static readonly string BearerToken = Uri.UnescapeDataString(EncodedBearerToken);
     const string GraphQlEndpoint = "https://x.com/i/api/graphql/2ICDjqPd81tulZcYrtpTuQ/TweetResultByRestId";
     const string GuestTokenEndpoint = "https://api.x.com/1.1/guest/activate.json";
 
     /// <summary>
-    /// Retrieves a tweet by its ID.
+    ///     Retrieves a tweet by its ID.
     /// </summary>
     /// <param name="tweetId">The unique identifier of the tweet to retrieve.</param>
-    /// <returns>A <see cref="Tweet"/> object containing the tweet's ID, text, and media.</returns>
+    /// <returns>A <see cref="Tweet" /> object containing the tweet's ID, text, and media.</returns>
     /// <exception cref="HttpRequestException">Thrown when the HTTP request fails.</exception>
     /// <exception cref="InvalidOperationException">Thrown when the Twitter API returns an error or the tweet is unavailable.</exception>
     public async Task<Tweet> GetTweetById(string tweetId)
@@ -123,7 +122,7 @@ public class TwitterClient(HttpClient httpClient)
 
         var fieldToggles = JsonSerializer.Serialize(new { withArticleRichContentState = false });
 
-        return new Dictionary<string, string>
+        return new()
         {
             ["variables"] = variables,
             ["features"] = features,
@@ -143,9 +142,7 @@ public class TwitterClient(HttpClient httpClient)
 
             var errorText = errorMessages.Length > 0 ? string.Join(", ", errorMessages) : "Unknown error";
             if (errorText.Contains("not authorized", StringComparison.OrdinalIgnoreCase))
-            {
                 throw new InvalidOperationException($"Not authorized: {errorText}");
-            }
 
             throw new InvalidOperationException($"Twitter API error: {errorText}");
         }
@@ -155,24 +152,25 @@ public class TwitterClient(HttpClient httpClient)
 
         var typeName = resolvedTweet.TypeName ?? string.Empty;
         if (typeName is "TweetUnavailable" or "TweetTombstone")
-        {
             throw new InvalidOperationException("Tweet is unavailable");
-        }
 
         var legacy = resolvedTweet.Legacy ??
                      throw new InvalidOperationException("Tweet payload is missing legacy data");
         var text = legacy.FullText ?? legacy.Text ?? string.Empty;
         var media = ParseMedia(legacy.ExtendedEntities?.Media).ToArray();
 
-        return new Tweet(tweetId, text, media);
+        return new(tweetId, text, media);
     }
 
-    static TweetResultBodyDto? ResolveTweet(TweetResultBodyDto? result) => result switch
+    static TweetResultBodyDto? ResolveTweet(TweetResultBodyDto? result)
     {
-        null => null,
-        { TypeName: "TweetWithVisibilityResults" } => result.Tweet,
-        _ => result
-    };
+        return result switch
+        {
+            null => null,
+            { TypeName: "TweetWithVisibilityResults" } => result.Tweet,
+            _ => result
+        };
+    }
 
 
     static IEnumerable<Media> ParseMedia(MediaEntityDto[]? mediaArray)
@@ -197,13 +195,16 @@ public class TwitterClient(HttpClient httpClient)
 
         yield break;
 
-        static MediaType ParseType(string? typeStr) => typeStr switch
+        static MediaType ParseType(string? typeStr)
         {
-            "photo" => MediaType.Photo,
-            "video" => MediaType.Video,
-            "animated_gif" => MediaType.AnimatedGif,
-            _ => throw new InvalidOperationException($"Unknown media type: {typeStr}")
-        };
+            return typeStr switch
+            {
+                "photo" => MediaType.Photo,
+                "video" => MediaType.Video,
+                "animated_gif" => MediaType.AnimatedGif,
+                _ => throw new InvalidOperationException($"Unknown media type: {typeStr}")
+            };
+        }
 
         static VideoVariant? CreateVideoVariant(VideoVariantDto variant)
         {
@@ -230,9 +231,7 @@ public class TwitterClient(HttpClient httpClient)
             var match = Regex.Match(url, @"/(\d+)x(\d+)/");
             if (match.Success && int.TryParse(match.Groups[1].Value, out var width) &&
                 int.TryParse(match.Groups[2].Value, out var height))
-            {
                 return (width, height);
-            }
 
             return (null, null);
         }
